@@ -10,10 +10,10 @@ from PyInstaller.building.api import COLLECT, EXE, PYZ
 from PyInstaller.building.build_main import Analysis
 
 a = Analysis(
-    ["main.py"],
+    ["run_classpet.py"],
     pathex=[],
     binaries=[],
-    datas=[("assets/class-pet.ico", "assets")],  # 运行时 app.setWindowIcon 需要它
+    datas=[("res/icons/class-pet.ico", "res/icons")],  # 运行时 setWindowIcon 需要它
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -36,7 +36,7 @@ exe = EXE(
     upx=False,
     console=False,  # GUI 程序，不弹控制台窗口
     disable_windowed_traceback=False,
-    icon="assets/class-pet.ico",
+    icon="res/icons/class-pet.ico",
 )
 
 coll = COLLECT(

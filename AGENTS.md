@@ -2,18 +2,18 @@
 
 ## 项目概览
 
-`class-pet`（课小宠 ClassPet）：面向教师的桌面助手，目标形态是课表 / 调课 / 上课通知。PySide6 桌面端应用，UI 层用 **qfluentwidgets**，**单体单文件**结构。入口为 `main.py`，当前是 `FluentWindow` + 单个首页 + `pynput` 全局输入监听的骨架，业务功能尚未实现。
+`class-pet`（课小宠 ClassPet）：面向教师的桌面助手，目标形态是课表 / 调课 / 上课通知。PySide6 桌面端应用，UI 层用 **qfluentwidgets**。入口为 `run_classpet.py`（只做编排），业务代码在 `classpet/` 包里。当前是 `FluentWindow` + 单个首页 + 全局输入监听 + 定时提醒的骨架，业务功能尚未实现。
 
 ## 环境与命令
 
 系统 PATH 上**没有 `python`**，`python` / `python3` 均指向 Microsoft Store 别名并报错。所有命令必须走 `uv`：
 
 ```bash
-uv sync              # 同步依赖
-uv run main.py       # 运行应用
-uv run python -c ... # 执行临时脚本
-uv run ruff check .  # 静态检查
-uv run basedpyright  # 类型检查
+uv sync                   # 同步依赖
+uv run run_classpet.py    # 运行应用
+uv run python -c ...      # 执行临时脚本
+uv run ruff check .       # 静态检查
+uv run basedpyright       # 类型检查
 uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行的 exe）
 ```
 
@@ -27,10 +27,13 @@ uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行�
 
 ## 结构约束
 
-- 保持单文件单体：除非有明确理由，新功能写进 `main.py`，不要预建 `src/`、包目录或抽象层。
-- 现有非源码文件只有 `class-pet.spec`（打包配置）与 `assets/`（图标），不要再扩目录。`assets/` 里的路径引用一律经 `resource_path()`。
-- 入口保持 `main() -> int` + `if __name__ == "__main__": sys.exit(main())` 的形式。
-- 不要引入未被要求的依赖、配置、脚手架或占位文件。
+- 目录按职责分层（参照同类桌面宠物项目 DyberPet 的组织方式），不要退化回单文件：
+  - `run_classpet.py` 只做编排：创建对象、连接跨模块信号、启停、进入事件循环。
+  - `classpet/modules.py` 放后台 worker（只发信号，不碰控件）、`classpet/notification.py` 放通知、`classpet/dashboard/` 放界面与页面、`classpet/utils.py` 放通用工具。
+  - `res/` 放运行时资源，按类型分子目录（现在只有 `res/icons/`）。
+- **模块之间不互相 import**：worker 与界面靠 Signal 连接，连线统一写在 `run_classpet.py`。界面需要外部模块时用 `MainWindow.setup_*` 这类钩子，不要让界面自己去 new 后台对象。
+- 入口保持 `main() -> int` + `if __name__ == "__main__": sys.exit(main())` 的形式（写在 `run_classpet.py`）。
+- 不要引入未被要求的依赖、配置、脚手架、空目录或占位文件；还没有内容的分层（如 `settings.py`、`conf.py`、`docs/`）就先不建。
 
 ## 代码约定
 
@@ -44,7 +47,7 @@ uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行�
 ## basedpyright 注意点
 
 - **严格度定在 `standard`，不是它的默认档 `recommended`。** 实测同一份代码：`recommended` = `0 error / 68 warning`，`standard` = `0 / 0`。68 条里 44 条是 `Unknown` 家族连锁，根因是 **qfluentwidgets 与 pynput 都没有类型信息**（无 `py.typed`、无 `.pyi`；PySide6 有 60 个 `.pyi`、tendo 有 `py.typed`），另有 10 条 `reportUnusedParameter`（pynput 回调参数）、8 条 `reportUnannotatedClassAttribute`、4 条 `reportUnusedCallResult`、1 条 `reportUnusedVariable`。改成 `recommended` 只会得到一墙黄色波浪线，不会挡住真问题。
-- 想收紧的**正确顺序**：先给 `main.py` 补类型注解 → 再升档。届时注意两点：
+- 想收紧的**正确顺序**：先给 `classpet/` 里的代码补类型注解 → 再升档。届时注意两点：
   - 那个承重的 `instance` 会以 `reportUnusedVariable` 出现，而 **basedpyright 不认 `# noqa: F841`**，要用 `# pyright: ignore[reportUnusedVariable]`；ruff 与 basedpyright 是两套抑制语法，别只加一边。
   - pynput 回调参数**不能**为了消警告删掉：`_wrap` 取前 N 个参数，删掉 `x, y` 会让 `pressed` 错位接到 `x`（详见 pynput 节）。
 - `include` / `exclude` **一旦写了就是替换，不是追加**：`include` 覆盖 pyright 默认的根目录扫描（所以 `**/*.py` 与 `class-pet.spec` 必须显式列出），`exclude` 覆盖默认的 `node_modules` / `__pycache__` / 点开头目录（所以要把这三项连同 `build`、`dist` 一起列全）。
@@ -97,16 +100,16 @@ uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行�
 - **重新打包前必须关掉正在运行的 exe**：进程占用 `class-pet.exe` 与 `_internal\PySide6\plugins\*.dll`，PyInstaller 清理 `dist` 时会报 `WinError 32` / `WinError 5`。同样地，**任何以 mmap 打开该 exe 的诊断代码（如 `pefile.PE(...)`）也会锁住文件**，用完必须 `pe.close()`——实测踩过，进程列表里查不到任何 `class-pet.exe` 却删不掉。
 - `qfluentwidgets` 与 `qframelesswindow` **不含任何外部数据文件**（样式内联在 Python 里），所以 `datas` 只需要图标一项；不要照搬网上"collect-data qfluentwidgets"的写法。
 - spec 顶部的 `from PyInstaller.building.api import COLLECT, EXE, PYZ` / `from PyInstaller.building.build_main import Analysis` **不能删**。这四个名字本来是 PyInstaller 在执行 spec 时注入的全局变量（`build_main.py` 的 `spec_namespace` + `exec(code, spec_namespace)`），不写就会让静态检查器报 `F821 Undefined name 'Analysis'`（编辑器里表现为 `"Analysis" is not defined`）。显式 import 拿到的是同一批对象，PyInstaller 执行时会用同样的值覆盖一次，无副作用。也**不要**指望 `uv run python class-pet.spec` 能跑——正确入口只有 `uv run pyinstaller --noconfirm class-pet.spec`。
-- 资源路径必须走 `resource_path()`（打包后取 `sys._MEIPASS`）。直接用 `__file__` 相对路径的开发写法在打包后会失效。
-- **单实例锁名随 `sys.argv[0]` 变**：开发版锁是 `...-class-pet-main-class-pet.lock`，打包版是 `...-class-pet-dist-class-pet-class-pet-class-pet.lock`，两者互不影响——所以开发版和打包版可以同时运行，这是符合预期的。
-- 图标：`assets/class-pet.ico` 同时用于 exe（spec 的 `icon=`）与运行时窗口图标（`app.setWindowIcon`）。源图 `assets/class-pet.png` 只用于生成 ico，不打进包里。
+- 资源路径必须走 `resource_path("icons", "class-pet.ico")` 这种形式：它统一定位到 `<仓库根>/res/`（开发时）或 `sys._MEIPASS/res/`（打包后）。不要拼 `__file__` 相对路径，那种写法打包后必失效。
+- **单实例锁名随 `sys.argv[0]` 变**（实测）：开发版是 `%TEMP%\C-Users-…-class-pet-run_classpet-class-pet.lock`，打包版是 `%TEMP%\C-Users-…-class-pet-dist-class-pet-class-pet-class-pet.lock`，两者互不影响——所以开发版和打包版可以同时运行，这是符合预期的。改入口脚本名会顺带改掉开发版的锁名。
+- 图标：`res/icons/class-pet.ico` 同时用于 exe（spec 的 `icon=`）与运行时窗口图标（`app.setWindowIcon`）；它还必须进 `datas`，否则打包后 `resource_path()` 取不到。源图 `res/icons/class-pet.png` 只用于生成 ico，不打进包里。
 - 打包产物 `dist/`、中间目录 `build/` 已在 `.gitignore`，不要提交。
 
 ## 验证 GUI 改动
 
 改动界面后必须真实跑一次，不能只靠静态检查：
 
-1. `uv run main.py` 能启动且不抛异常。
+1. `uv run run_classpet.py` 能启动且不抛异常。
 2. 无头式确认：用 `QTimer.singleShot` 挂到 `QApplication.exec` 上自动退出，再对目标控件调用 `widget.grab().save(...)`，读取该 PNG 确认渲染结果。
    - 注意：Windows 上 `screen.grabWindow(0)` 截全屏**抓不到被遮挡的窗口**，请改抓控件自身。
 3. 验证打包后的 exe：`sys.frozen` 分支、图标、单实例都要在**真实 exe** 上再验一遍（开发版跑通不代表打包版跑通）。抓窗口用 Win32 `PrintWindow`：
@@ -114,5 +117,5 @@ uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行�
    - `GCLP_HICON` 常量在 `win32con` 里**不存在**，用字面量 `-14`。
    - 模拟"双击启动"（无控制台句柄）用 `os.startfile(exe_path)`，而不是 `subprocess.Popen`——后者会把当前进程的管道句柄继承下去，测不出真实场景。
 4. **探针脚本写进系统临时目录，不要放仓库里。** 原因：`[tool.basedpyright] include = ["**/*.py"]` 会把仓库里的临时 .py 一并分析，而这类探针必然产生误报——`QApplication.exec = patched_exec` 会被判 `reportAttributeAccessIssue`（存根里 `exec` 是 `() -> int`，补丁函数多带一个 `self`），`win.reminders` / `win.scheduler` 这类自定义属性同样被判 `reportAttributeAccessIssue`（`topLevelWidgets()` 的静态类型只是 `QWidget`），`job.next_run_time` 还会判 `reportOptionalMemberAccess`。放临时目录可同时绕开 basedpyright 的 include、ruff 与 `uv run basedpyright` 的门禁。
-   - 用法：`runpy.run_path(r"<项目绝对路径>\main.py", run_name="__main__")`，shell 的 cwd 留在项目根即可（`resource_path()`、`assets/` 都按 main.py 位置解析）。
+   - 用法：探针里先 `sys.path.insert(0, r"<项目绝对路径>")`，再 `runpy.run_path(r"<项目绝对路径>\run_classpet.py", run_name="__main__")`。两处都不能省——`runpy.run_path` **不会**把脚本目录加进 `sys.path`，而入口要 `import classpet`；`resource_path()` 按包自身位置解析 `res/`，与 cwd 无关。
 5. 验证脚本用完即删，不要留在仓库里。
