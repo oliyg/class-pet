@@ -13,8 +13,10 @@
 - qfluentwidgets 1.11.3（UI 库，PyPI 包名 `pyside6-fluent-widgets`）
 - pynput 1.8.2（全局输入监听）
 - tendo 0.3.0（单实例）
+- apscheduler 3.11.3（定时任务，随附 tzdata、tzlocal）
 - ruff 0.16.8（开发依赖，见 `[dependency-groups] dev`）
 - pyinstaller 6.22.3、pillow 12.3.0（开发依赖，用于打包与生成图标）
+- basedpyright 1.40.1（开发依赖，类型检查）
 - 依赖声明见 `pyproject.toml`，锁定见 `uv.lock`
 
 系统 PATH 上没有 `python`，请统一通过 `uv` 执行。
@@ -25,6 +27,7 @@
 uv sync             # 创建 .venv 并安装依赖
 uv run main.py      # 启动应用
 uv run ruff check . # 静态检查
+uv run basedpyright # 类型检查
 ```
 
 重复启动会被拒绝：第二个实例提示「课小宠已在运行」后以退出码 1 结束，不会开出第二个窗口。提示方式随环境而定——开发运行时写 stderr，打包后弹对话框。
@@ -61,4 +64,4 @@ class-pet/
 
 ## 当前状态
 
-上方项目简介描述的是产品的目标形态。仓库目前只有 UI 骨架、输入「活动监听」、单实例保护与打包配置：`FluentWindow` + 左侧导航 + 首页，`pynput` 全局输入监听（只统计事件次数与最后活动时间，不记录按键内容），`tendo` 保证同一份代码同时只跑一个实例，`class-pet.spec` 可打出带图标的 Windows 可执行程序；课表、调课、通知等业务功能均未实现。
+上方项目简介描述的是产品的目标形态。仓库目前只有 UI 骨架、输入「活动监听」、单实例保护与打包配置：`FluentWindow` + 左侧导航 + 首页，`pynput` 全局输入监听（只统计事件次数与最后活动时间，不记录按键内容），`tendo` 保证同一份代码同时只跑一个实例，定时任务由 `apscheduler` 承担（现有一个每分钟弹一次系统提醒的测试任务），`class-pet.spec` 可打出带图标的 Windows 可执行程序；课表、调课、通知等业务功能均未实现。

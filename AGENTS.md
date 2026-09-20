@@ -13,6 +13,7 @@ uv sync              # 同步依赖
 uv run main.py       # 运行应用
 uv run python -c ... # 执行临时脚本
 uv run ruff check .  # 静态检查
+uv run basedpyright  # 类型检查
 uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行的 exe）
 ```
 
@@ -20,7 +21,8 @@ uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行�
 - 已安装 UI 库：qfluentwidgets 1.11.3（PyPI 包名 `pyside6-fluent-widgets`），随之带入 `pysidesix-frameless-window`、`darkdetect`、`pywin32`。
 - 已安装输入监听：pynput 1.8.2（随附 `six`）。
 - 已安装单实例：tendo 0.3.0。
-- 开发依赖（`[dependency-groups] dev`）：ruff 0.16.8、pyinstaller 6.22.3、pillow 12.3.0。
+- 已安装定时任务：apscheduler 3.11.3（3.x API，随附 `tzdata`、`tzlocal`）。
+- 开发依赖（`[dependency-groups] dev`）：ruff 0.16.8、basedpyright 1.40.1、pyinstaller 6.22.3、pillow 12.3.0。
 - `pyproject.toml` 中 `package = false`：本项目是可执行的脚本目录，不是可安装包，新增模块时无需构建后端。
 
 ## 结构约束
@@ -36,7 +38,19 @@ uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行�
 - Qt 导入一律用 `PySide6.*`，不要用 `PyQt*` 或 `PySide2`。
 - UI 控件优先用 `qfluentwidgets`（`FluentWindow`、`PushButton`、`BodyLabel`、`SubtitleLabel` 等）；`PySide6.QtWidgets` 只用来搭布局与容器（`QWidget`、`QVBoxLayout`）。同一控件两套写法混用属于禁止项。
 - 未配置测试框架与 formatter（无 pytest / black）。已引入 ruff 做静态检查（`uv run ruff check .`），不要换别的 linter，也不要擅自加规则。
+- 类型检查用 basedpyright（`uv run basedpyright`），配置在 `pyproject.toml` 的 `[tool.basedpyright]`。**不要顺手把它调成 `recommended`**，理由见下。
 - **禁止 `ruff check --fix --unsafe-fixes`**：其中「移除未使用的 `instance`」会静默破坏单实例（见下）。
+
+## basedpyright 注意点
+
+- **严格度定在 `standard`，不是它的默认档 `recommended`。** 实测同一份代码：`recommended` = `0 error / 68 warning`，`standard` = `0 / 0`。68 条里 44 条是 `Unknown` 家族连锁，根因是 **qfluentwidgets 与 pynput 都没有类型信息**（无 `py.typed`、无 `.pyi`；PySide6 有 60 个 `.pyi`、tendo 有 `py.typed`），另有 10 条 `reportUnusedParameter`（pynput 回调参数）、8 条 `reportUnannotatedClassAttribute`、4 条 `reportUnusedCallResult`、1 条 `reportUnusedVariable`。改成 `recommended` 只会得到一墙黄色波浪线，不会挡住真问题。
+- 想收紧的**正确顺序**：先给 `main.py` 补类型注解 → 再升档。届时注意两点：
+  - 那个承重的 `instance` 会以 `reportUnusedVariable` 出现，而 **basedpyright 不认 `# noqa: F841`**，要用 `# pyright: ignore[reportUnusedVariable]`；ruff 与 basedpyright 是两套抑制语法，别只加一边。
+  - pynput 回调参数**不能**为了消警告删掉：`_wrap` 取前 N 个参数，删掉 `x, y` 会让 `pressed` 错位接到 `x`（详见 pynput 节）。
+- `include` / `exclude` **一旦写了就是替换，不是追加**：`include` 覆盖 pyright 默认的根目录扫描（所以 `**/*.py` 与 `class-pet.spec` 必须显式列出），`exclude` 覆盖默认的 `node_modules` / `__pycache__` / 点开头目录（所以要把这三项连同 `build`、`dist` 一起列全）。
+- **`class-pet.spec` 在 include 里，这是故意的**：它就是靠 `reportUndefinedVariable` 拦住"删掉 spec 顶部 import"这类改动的。实测删掉那两行 → `rc=1` + 4 条 `reportUndefinedVariable`（`Analysis` / `PYZ` / `EXE` / `COLLECT`）；补回 → `rc=0`。
+- Zed 自带一份同版本（`%LOCALAPPDATA%\Zed\languages\basedpyright`，Zed 与 `ruff` 都放那儿），所以编辑器里看到的诊断来自 Zed 那份；项目这份由 `uv.lock` 固定，供 CI 与命令行使用。两者版本目前一致（1.40.1）。
+- 只想卡错误时用 `uv run basedpyright --level error`（`--level` 取 `error` 或 `warning`）。
 
 ## qfluentwidgets 注意点
 
@@ -66,6 +80,17 @@ uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行�
 - 单实例检查放在 `main()` 开头、`QApplication` 之前，但**模块级 import 已经发生**：第二个实例仍会执行全部 import 并打印 qfluentwidgets 横幅，然后才退出。
 - 第二个实例的提示由 `report_already_running()` 按环境分流：`getattr(sys, "frozen", False)` 为真（打包后没有控制台）就弹 `QMessageBox`，否则写 stderr。若要做"唤出已有窗口"，需要另加 IPC（`QLocalServer`/`QSharedMemory`），`tendo` 不提供。
 
+## apscheduler 注意点
+
+- **用 `QtScheduler`（`apscheduler.schedulers.qt`），不要换成 `BackgroundScheduler`。** 前者的唤醒走 Qt 事件循环（内部就是 `QTimer.singleShot(ms, self._process_jobs)` + 重排下一次），不额外起调度线程；`BackgroundScheduler` 会自带一个调度线程，在 Qt 应用里没有意义。
+- **但任务体不跑在 GUI 线程。** `QtScheduler` 只接管"何时唤醒"，任务仍交给默认的 `ThreadPoolExecutor` 执行——实测任务里 `threading.current_thread().name` 是 `ThreadPoolExecutor-0_0`，而 GUI 是 `MainThread`。所以任务函数里**不能直接操作控件**，必须经 `Signal` 回到 GUI 线程，与 pynput 那条规矩完全一致。若确实需要同步跑（任务极短、且要直接改 UI），可以换 executor，但那样一次慢任务就会冻住界面。
+- **生命周期由 `main()` 显式负责**：`window.scheduler` 不是 `QObject`、挂不了父对象（不像 `InputMonitor` 有窗口兜底），所以必须 `start()` + 在 `app.aboutToQuit` 上 `shutdown(wait=False)`。`wait=False` 是为了不让卡住的任务拖住进程退出。
+- 状态机：`start()` 重复调用抛 `SchedulerAlreadyRunningError`；未启动就 `shutdown()` 抛 `SchedulerNotRunningError`。
+- **当前只有一个测试任务** `test-reminder`（每分钟一次），定义在 `MainWindow.__init__`，用途是打通「调度器 → 信号 → 系统通知」；课表/提醒规则定下来后替换掉它。加任务：`window.scheduler.add_job(func, "interval" | "cron" | "date", ...)`；`start()` 之前 `add_job` 也可以（先进 `_pending_jobs`，`start()` 时统一入库）。默认 jobstore 是 `MemoryJobStore`，重启不保留，靠代码重新注册。
+- **系统通知链路**：`ReminderService`（`QObject`）持有一个常驻的 `QSystemTrayIcon` 和 `notify = Signal(str, str)`。调度器任务只调 `reminders.remind(title, msg)`（纯发信号），真正调 `showMessage` 的是 GUI 线程上的槽 `_show`。托盘图标必须 `show()` 出来，否则 `showMessage` 什么都不弹。
+- 通知里显示的应用名：开发运行时是 **"Python"**，打包后是 **"class-pet.exe"**（都来自进程默认的 AppUserModelID），不是"课小宠"；要改成中文名得调 `SetCurrentProcessExplicitAppUserModelID`，目前未做。
+- **不要升到 4.x**：4.x 是重写过的 async API，`add_job` 那一套会变；而且它目前只有预发布版——实测 `uv run --with "apscheduler>=4"` 报 `only apscheduler<=4.0.0a6 is available`，正式版尚未发布，所以 uv 解析到 3.11.3 是正确的。
+
 ## PyInstaller 打包注意点
 
 - 用 `class-pet.spec`（onedir + `console=False`），**不要改成 onefile**：onefile 每次启动都要解包到临时目录，桌面常驻程序启动会明显变慢。产物 `dist/class-pet/`，约 130 MB。
@@ -88,4 +113,6 @@ uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行�
    - `win32gui` 里**没有** `PrintWindow`，得走 ctypes：`ctypes.windll.user32.PrintWindow(hwnd, save_dc.GetSafeHdc(), 2)`（flag `2` = `PW_RENDERFULLCONTENT`，可抓被遮挡的窗口）。
    - `GCLP_HICON` 常量在 `win32con` 里**不存在**，用字面量 `-14`。
    - 模拟"双击启动"（无控制台句柄）用 `os.startfile(exe_path)`，而不是 `subprocess.Popen`——后者会把当前进程的管道句柄继承下去，测不出真实场景。
-4. 验证脚本用完即删，不要留在仓库里。
+4. **探针脚本写进系统临时目录，不要放仓库里。** 原因：`[tool.basedpyright] include = ["**/*.py"]` 会把仓库里的临时 .py 一并分析，而这类探针必然产生误报——`QApplication.exec = patched_exec` 会被判 `reportAttributeAccessIssue`（存根里 `exec` 是 `() -> int`，补丁函数多带一个 `self`），`win.reminders` / `win.scheduler` 这类自定义属性同样被判 `reportAttributeAccessIssue`（`topLevelWidgets()` 的静态类型只是 `QWidget`），`job.next_run_time` 还会判 `reportOptionalMemberAccess`。放临时目录可同时绕开 basedpyright 的 include、ruff 与 `uv run basedpyright` 的门禁。
+   - 用法：`runpy.run_path(r"<项目绝对路径>\main.py", run_name="__main__")`，shell 的 cwd 留在项目根即可（`resource_path()`、`assets/` 都按 main.py 位置解析）。
+5. 验证脚本用完即删，不要留在仓库里。

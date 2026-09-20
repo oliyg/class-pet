@@ -3,6 +3,7 @@ name = "class-pet"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "apscheduler>=3.11.3",
     "pynput>=1.8.2",
     "PySide6>=6.8",
     "pyside6-fluent-widgets>=1.11.3",
@@ -12,8 +13,20 @@ dependencies = [
 [tool.uv]
 package = false
 
+[tool.basedpyright]
+# standard 档在本项目给出 0 error / 0 warning 的干净基线；recommended 会因 qfluentwidgets、
+# pynput 都没有类型标注而产出 68 条连锁警告（详情见 AGENTS.md）。
+typeCheckingMode = "standard"
+pythonVersion = "3.12"
+# include 会覆盖默认值，所以 .py 必须显式写全，spec 也要单独列出才能被检查。
+include = ["**/*.py", "class-pet.spec"]
+# exclude 同样覆盖 pyright 的默认值（原本是 node_modules / __pycache__ / 点开头目录），
+# 因此这里把默认的三项连同构建产物一起列全。
+exclude = ["**/node_modules", "**/__pycache__", "**/.*", "build", "dist"]
+
 [dependency-groups]
 dev = [
+    "basedpyright>=1.40.1",
     "pillow>=12.3.0",
     "pyinstaller>=6.22.3",
     "ruff>=0.16.8",

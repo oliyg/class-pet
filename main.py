@@ -4,10 +4,17 @@ import os
 import sys
 import time
 
+from apscheduler.schedulers.qt import QtScheduler
 from pynput import keyboard, mouse
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QMessageBox,
+    QSystemTrayIcon,
+    QVBoxLayout,
+    QWidget,
+)
 
 # UI 控件统一取自 qfluentwidgets，PySide6.QtWidgets 只用于布局与容器。
 from qfluentwidgets import (
@@ -114,6 +121,27 @@ class HomePage(QWidget):
         self.activity_label.setText(f"最近事件：{kind} · 第 {count} 次")
 
 
+class ReminderService(QObject):
+    """系统提醒：调度器任务只发信号，真正的通知在 GUI 线程弹出。"""
+
+    notify = Signal(str, str)  # (标题, 正文)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # 托盘图标必须常驻显示，否则 showMessage 不弹任何东西。
+        self.tray = QSystemTrayIcon(QIcon(resource_path("assets/class-pet.ico")), self)
+        self.tray.setToolTip("课小宠 ClassPet")
+        self.tray.show()
+        self.notify.connect(self._show)  # 跨线程连接，Qt 自动排队回 GUI 线程
+
+    def remind(self, title: str, message: str) -> None:
+        """供调度器任务调用。任务跑在 ThreadPoolExecutor 线程上，这里只发信号、不碰控件。"""
+        self.notify.emit(title, message)
+
+    def _show(self, title: str, message: str) -> None:
+        self.tray.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 5000)
+
+
 class MainWindow(FluentWindow):
     """主窗口：左侧导航栏 + 右侧内容区。"""
 
@@ -128,6 +156,24 @@ class MainWindow(FluentWindow):
 
         self.monitor = InputMonitor(self)  # 监听器归主窗口所有，随窗口一起销毁
         self.monitor.activity.connect(self.home_page.show_activity)
+
+        # 定时任务调度器：唤醒走 Qt 事件循环（内部用 QTimer.singleShot），不额外起调度线程。
+        # 但任务体跑在默认的 ThreadPoolExecutor 线程池里，所以任务里同样不能直接碰控件，
+        # 必须经 Signal 回到 GUI 线程（与 InputMonitor 同一条规矩）。
+        # 它不是 QObject、挂不了父对象，启停由 main() 显式负责。
+        self.scheduler = QtScheduler()
+
+        self.reminders = ReminderService(self)
+
+        # 测试任务：每分钟弹一次系统提醒，用来验证「调度器 → 信号 → 系统通知」整条链路。
+        # 等课表/提醒规则确定后替换掉（args 由调度器传入，不用 lambda 便于排查）。
+        self.scheduler.add_job(
+            self.reminders.remind,
+            "interval",
+            minutes=1,
+            id="test-reminder",
+            args=("课小宠 ClassPet", "系统提醒测试：定时任务已触发"),
+        )
 
 
 def report_already_running() -> None:
@@ -165,7 +211,10 @@ def main() -> int:
     window = MainWindow()
     window.show()  # 先显示窗口，再进入事件循环
     window.monitor.start()  # 窗口就绪后再挂全局钩子
+    window.scheduler.start()  # 依附 Qt 事件循环，必须在 app.exec() 之前启动
     app.aboutToQuit.connect(window.monitor.stop)  # 退出前务必摘下钩子
+    # wait=False：不让卡住的任务拖住进程退出；提醒类任务被中途截断无副作用
+    app.aboutToQuit.connect(lambda: window.scheduler.shutdown(wait=False))
 
     return app.exec()  # 阻塞至窗口关闭，返回进程退出码
 
