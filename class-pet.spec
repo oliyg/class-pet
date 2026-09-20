@@ -1,6 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller 打包配置。构建：uv run pyinstaller --noconfirm class-pet.spec
 # 产物：dist/class-pet/class-pet.exe（onedir，不用 onefile：每次启动解包太慢）
+#
+# Analysis / PYZ / EXE / COLLECT 平时由 PyInstaller 注入到 spec 的全局命名空间
+# （见 PyInstaller/building/build_main.py 的 spec_namespace 与 exec(code, spec_namespace)），
+# 文件里不声明，静态检查器就会报 "Analysis" is not defined。这里显式 import 的是同一批
+# 对象，PyInstaller 执行时只会用同样的值覆盖一次，无运行时副作用。
+from PyInstaller.building.api import COLLECT, EXE, PYZ
+from PyInstaller.building.build_main import Analysis
 
 a = Analysis(
     ["main.py"],

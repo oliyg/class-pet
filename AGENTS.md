@@ -71,6 +71,7 @@ uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行�
 - 用 `class-pet.spec`（onedir + `console=False`），**不要改成 onefile**：onefile 每次启动都要解包到临时目录，桌面常驻程序启动会明显变慢。产物 `dist/class-pet/`，约 130 MB。
 - **重新打包前必须关掉正在运行的 exe**：进程占用 `class-pet.exe` 与 `_internal\PySide6\plugins\*.dll`，PyInstaller 清理 `dist` 时会报 `WinError 32` / `WinError 5`。同样地，**任何以 mmap 打开该 exe 的诊断代码（如 `pefile.PE(...)`）也会锁住文件**，用完必须 `pe.close()`——实测踩过，进程列表里查不到任何 `class-pet.exe` 却删不掉。
 - `qfluentwidgets` 与 `qframelesswindow` **不含任何外部数据文件**（样式内联在 Python 里），所以 `datas` 只需要图标一项；不要照搬网上"collect-data qfluentwidgets"的写法。
+- spec 顶部的 `from PyInstaller.building.api import COLLECT, EXE, PYZ` / `from PyInstaller.building.build_main import Analysis` **不能删**。这四个名字本来是 PyInstaller 在执行 spec 时注入的全局变量（`build_main.py` 的 `spec_namespace` + `exec(code, spec_namespace)`），不写就会让静态检查器报 `F821 Undefined name 'Analysis'`（编辑器里表现为 `"Analysis" is not defined`）。显式 import 拿到的是同一批对象，PyInstaller 执行时会用同样的值覆盖一次，无副作用。也**不要**指望 `uv run python class-pet.spec` 能跑——正确入口只有 `uv run pyinstaller --noconfirm class-pet.spec`。
 - 资源路径必须走 `resource_path()`（打包后取 `sys._MEIPASS`）。直接用 `__file__` 相对路径的开发写法在打包后会失效。
 - **单实例锁名随 `sys.argv[0]` 变**：开发版锁是 `...-class-pet-main-class-pet.lock`，打包版是 `...-class-pet-dist-class-pet-class-pet-class-pet.lock`，两者互不影响——所以开发版和打包版可以同时运行，这是符合预期的。
 - 图标：`assets/class-pet.ico` 同时用于 exe（spec 的 `icon=`）与运行时窗口图标（`app.setWindowIcon`）。源图 `assets/class-pet.png` 只用于生成 ico，不打进包里。
