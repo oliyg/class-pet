@@ -1,11 +1,13 @@
 # 课小宠 ClassPet —— 单体单文件应用，全部逻辑都写在本文件内。
 import itertools
+import os
 import sys
 import time
 
 from pynput import keyboard, mouse
 from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtWidgets import QApplication, QVBoxLayout, QWidget
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QApplication, QMessageBox, QVBoxLayout, QWidget
 
 # UI 控件统一取自 qfluentwidgets，PySide6.QtWidgets 只用于布局与容器。
 from qfluentwidgets import (
@@ -18,6 +20,12 @@ from qfluentwidgets import (
     setTheme,
 )
 from tendo import singleton
+
+
+def resource_path(relative: str) -> str:
+    """资源定位：开发时在脚本旁边，PyInstaller 打包后在 sys._MEIPASS 下。"""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, relative)
 
 
 class InputMonitor(QObject):
@@ -122,14 +130,28 @@ class MainWindow(FluentWindow):
         self.monitor.activity.connect(self.home_page.show_activity)
 
 
+def report_already_running() -> None:
+    """告知用户已有实例在运行。
+
+    打包后（`sys.frozen`）进程没有控制台，往 stderr 写等于石沉大海，必须弹对话框；
+    开发时保持只写 stderr，方便脚本与终端观察。
+    """
+    if not getattr(sys, "frozen", False):
+        print("课小宠 ClassPet 已在运行，本次启动退出。", file=sys.stderr)
+        return
+
+    _app = QApplication(sys.argv)  # QMessageBox 需要先有 QApplication，引用要保留以免被回收
+    QMessageBox.information(None, "课小宠 ClassPet", "课小宠已在运行，请勿重复启动。")
+
+
 def main() -> int:
     # 单实例：锁文件放在系统临时目录，第二个实例会抛 SingleInstanceException。
     # 必须留住 instance 这个引用——对象一旦被回收，__del__ 会立刻删掉锁文件，单实例随即失效。
     try:
         instance = singleton.SingleInstance("class-pet")  # noqa: F841 —— 见上：这个引用不能删
     except singleton.SingleInstanceException:
-        # 已有实例在运行：不用再启动 Qt，直接退出。
-        print("课小宠 ClassPet 已在运行，本次启动退出。", file=sys.stderr)
+        # 已有实例在运行：不用再启动 Qt 主流程，直接退出。
+        report_already_running()
         return 1
 
     # 高 DPI 缩放策略必须在 QApplication 构造之前设置，否则不生效。
@@ -137,6 +159,7 @@ def main() -> int:
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
     app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(resource_path("assets/class-pet.ico")))  # 任务栏 / Alt-Tab 图标
     setTheme(Theme.AUTO)  # 主题跟随系统明暗
 
     window = MainWindow()
