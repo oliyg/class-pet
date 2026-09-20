@@ -12,10 +12,11 @@ class NotificationService(QObject):
     """托盘图标与系统通知。
 
     跨线程调用是安全的：只有槽里才碰控件，Qt 会把跨线程的信号投递排队回 GUI 线程。
-    托盘还承担"唤出窗口"和"退出"——开机自启时窗口不显示，这是用户唯一的操作入口。
+    托盘还承担"打开窗口"和"退出"——开机自启时两个窗口都不显示，这里是用户唯一的操作入口。
     """
 
-    show_requested = Signal()  # 托盘被双击：请求唤出主窗口
+    dashboard_requested = Signal()  # 打开控制台窗口（托盘双击 / 菜单）
+    settings_requested = Signal()  # 打开设置窗口（托盘菜单）
     quit_requested = Signal()  # 托盘菜单「退出」
 
     def __init__(self, parent=None):
@@ -27,7 +28,8 @@ class NotificationService(QObject):
 
         # 菜单要留着引用：setContextMenu 不做父子关系，只挂指针。
         self.menu = QMenu()
-        self.menu.addAction("打开控制台", lambda *_: self.show_requested.emit())
+        self.menu.addAction("打开控制台", lambda *_: self.dashboard_requested.emit())
+        self.menu.addAction("设置", lambda *_: self.settings_requested.emit())
         self.menu.addAction("退出", lambda *_: self.quit_requested.emit())
         self.tray.setContextMenu(self.menu)
 
@@ -37,6 +39,7 @@ class NotificationService(QObject):
     def show(self, title: str, message: str) -> None:
         self.tray.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 5000)
 
+    @Slot(QSystemTrayIcon.ActivationReason)  # 接自己的托盘图标
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
-            self.show_requested.emit()
+            self.dashboard_requested.emit()

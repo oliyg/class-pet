@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-`class-pet`（课小宠 ClassPet）：面向教师的桌面助手，目标形态是课表 / 调课 / 上课通知。PySide6 桌面端应用，UI 层用 **qfluentwidgets**。入口为 `run_classpet.py`（只做编排），业务代码在 `classpet/` 包里。当前是 `FluentWindow` + 左侧导航（控制台 / 设置）+ 全局输入监听 + 定时提醒 + 开机自启动的骨架，业务功能尚未实现。
+`class-pet`（课小宠 ClassPet）：面向教师的桌面助手，目标形态是课表 / 调课 / 上课通知。PySide6 桌面端应用，UI 层用 **qfluentwidgets**。入口为 `run_classpet.py`（只做编排），业务代码在 `classpet/` 包里。当前是两个 `FluentWindow`（控制台 / 设置）+ 全局输入监听 + 定时提醒 + 开机自启动的骨架，业务功能尚未实现。
 
 ## 环境与命令
 
@@ -29,10 +29,12 @@ uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行�
 
 - 目录按职责分层（参照同类桌面宠物项目 DyberPet 的组织方式），不要退化回单文件：
   - `run_classpet.py` 只做编排：创建对象、连接跨模块信号、启停、进入事件循环。
-  - `classpet/modules.py` 放后台 worker（只发信号，不碰控件）、`classpet/notification.py` 放通知、`classpet/dashboard/` 放界面与页面、`classpet/utils.py` 放通用工具。
+  - worker 各自一个模块：`classpet/input_monitor.py`（全局输入监听）、`classpet/scheduler_worker.py`（定时任务）——worker 只发信号、不碰控件。`classpet/notification.py` 放通知，`classpet/utils.py` 放通用工具。
+  - 界面**每个窗口一个子包**（`classpet/dashboard/`、`classpet/settings/`）：包内 `window.py` 是窗口本体、`*_page.py` 是它装载的页面；`classpet/base_window.py` 放窗口公共行为。**没有 `ui/` 这一层**，窗口包直接挂在 `classpet/` 下。
+  - 命名占用提醒：`classpet/settings/` 是"设置窗口"，将来要做配置持久化别再用 `settings` 这个名字，用 `config.py` 之类。
   - `res/` 放运行时资源，按类型分子目录（现在只有 `res/icons/`）。
   - 平台相关功能放自己的子包（如 `classpet/self_startup/`：门面 + `win32.py`），门面按 `sys.platform` 分发；**没有实现的平台不要写空实现或占位文件**。
-- **模块之间不互相 import**：worker 与界面靠 Signal 连接，连线统一写在 `run_classpet.py`。界面需要外部模块时用 `MainWindow.setup_*` 这类钩子，不要让界面自己去 new 后台对象。
+- **模块之间不互相 import**：worker 与界面靠 Signal 连接，连线统一写在 `run_classpet.py`。界面需要外部模块时用窗口的 `setup_*` 钩子，不要让界面自己去 new 后台对象。
 - 入口保持 `main() -> int` + `if __name__ == "__main__": sys.exit(main())` 的形式（写在 `run_classpet.py`）。
 - 不要引入未被要求的依赖、配置、脚手架、空目录或占位文件；还没有内容的分层（如 `settings.py`、`conf.py`）就先不建。
 - 机制类说明写进 `docs/`（现有 `docs/hkcu.md`）：它讲的是"某个系统机制是什么、我们为什么这么用"。README 只留使用者需要的内容，别把它撑成技术手册。新增 docs 时同步补 README 的目录树。
@@ -41,6 +43,9 @@ uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行�
 
 - 缩进 4 空格，双引号。命名：函数、变量、模块名用 `snake_case`，类名用 `PascalCase`，私有成员加单个下划线前缀。
 - Qt 导入一律用 `PySide6.*`，不要用 `PyQt*` 或 `PySide2`。
+- **信号接收方法一律加 `@Slot(...)`**，签名与所连信号一致；不接信号的方法不加（`setup_*` 钩子、`start()` 这类被直接调用的一律不加）。实测依据：加了 `@Slot` 的方法会出现在类的 `staticMetaObject` 里，没加的不出现——**排队连接（跨线程）靠这份签名做参数转换**，所以签名写错比不写更糟。
+  - **自由函数与 lambda 不要加**：它们没有宿主对象，`@Slot` 不登记任何东西（实测装饰后仍是个普通函数）。入口里的 `apply_autostart` 就是这种情况。
+  - 信号转发连接（`page.sig.connect(window.sig)`）两边都是信号，不需要 `@Slot`。
 - UI 控件优先用 `qfluentwidgets`（`FluentWindow`、`PushButton`、`BodyLabel`、`SubtitleLabel` 等）；`PySide6.QtWidgets` 只用来搭布局与容器（`QWidget`、`QVBoxLayout`）。同一控件两套写法混用属于禁止项。
   - **有意偏离（不算违规，但不要扩大）**：托盘相关只能用原生 `QSystemTrayIcon` / `QMenu`——qfluentwidgets 没有托盘实现，它的 `RoundMenu` 是窗口内菜单；启动早期与失败路径用原生 `QMessageBox`——它不依赖 qfluentwidgets 的初始化状态。除这两类，新增界面一律用 qfluentwidgets。
 - 未配置测试框架与 formatter（无 pytest / black）。已引入 ruff 做静态检查（`uv run ruff check .`），不要换别的 linter，也不要擅自加规则。
@@ -92,8 +97,8 @@ uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行�
 - **但任务体不跑在 GUI 线程。** `QtScheduler` 只接管"何时唤醒"，任务仍交给默认的 `ThreadPoolExecutor` 执行——实测任务里 `threading.current_thread().name` 是 `ThreadPoolExecutor-0_0`，而 GUI 是 `MainThread`。所以任务函数里**不能直接操作控件**，必须经 `Signal` 回到 GUI 线程，与 pynput 那条规矩完全一致。若确实需要同步跑（任务极短、且要直接改 UI），可以换 executor，但那样一次慢任务就会冻住界面。
 - **生命周期由 `main()` 显式负责**：入口里 `scheduler.start()` + `app.aboutToQuit.connect(scheduler.shutdown)`。`SchedulerWorker` 自己是 `QObject`，但内部的 `QtScheduler` 不是、挂不了父对象，所以别指望窗口析构能替你收尾；`wait=False` 是为了不让卡住的任务拖住进程退出。
 - 状态机：`start()` 重复调用抛 `SchedulerAlreadyRunningError`；未启动就 `shutdown()` 抛 `SchedulerNotRunningError`。
-- **当前只有一个测试任务** `test-reminder`（每分钟一次），注册在 `SchedulerWorker.start()`（`classpet/modules.py`）里，用途是打通「调度器 → 信号 → 系统通知」；课表/提醒规则定下来后替换掉它。加任务：`worker.scheduler.add_job(func, "interval" | "cron" | "date", ...)`；`start()` 之前 `add_job` 也可以（先进 `_pending_jobs`，`start()` 时统一入库）。默认 jobstore 是 `MemoryJobStore`，重启不保留，靠代码重新注册。
-- **界面刷新不要用调度器**：控制台每秒刷新空闲时长用的是 `QTimer`（见 `classpet/dashboard/dashboard.py`）。调度器留给真正的定时任务（提醒、课表状态变化），拿它当刷新器只会把纯界面更新变成跨线程信号往返。
+- **当前只有一个测试任务** `test-reminder`（每分钟一次），注册在 `SchedulerWorker.start()`（`classpet/scheduler_worker.py`）里，用途是打通「调度器 → 信号 → 系统通知」；课表/提醒规则定下来后替换掉它。加任务：`worker.scheduler.add_job(func, "interval" | "cron" | "date", ...)`；`start()` 之前 `add_job` 也可以（先进 `_pending_jobs`，`start()` 时统一入库）。默认 jobstore 是 `MemoryJobStore`，重启不保留，靠代码重新注册。
+- **界面刷新不要用调度器**：控制台每秒刷新空闲时长用的是 `QTimer`（见 `classpet/dashboard/status_page.py`）。调度器留给真正的定时任务（提醒、课表状态变化），拿它当刷新器只会把纯界面更新变成跨线程信号往返。
 - **系统通知链路**：`NotificationService`（`classpet/notification.py`）持有常驻的 `QSystemTrayIcon`，`show` 是 `@Slot(str, str)`。任务体跑在 worker 线程，只 `emit` `SchedulerWorker.reminder_due`；入口把它连到 `notification.show`，跨线程自动排队回 GUI 线程。托盘图标必须 `show()` 出来，否则 `showMessage` 什么都不弹。
 - 通知里显示的应用名：开发运行时是 **"Python"**，打包后是 **"class-pet.exe"**（都来自进程默认的 AppUserModelID），不是"课小宠"；要改成中文名得调 `SetCurrentProcessExplicitAppUserModelID`，目前未做。
 - **不要升到 4.x**：4.x 是重写过的 async API，`add_job` 那一套会变；而且它目前只有预发布版——实测 `uv run --with "apscheduler>=4"` 报 `only apscheduler<=4.0.0a6 is available`，正式版尚未发布，所以 uv 解析到 3.11.3 是正确的。
@@ -106,9 +111,9 @@ uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行�
 - **状态的唯一来源是系统**（注册表里那条值）。不要再往配置里存一份 `autostart: true`：安全软件清掉条目时会出现「开关开着但系统里没有」的双份真相。开关初值一律用 `is_enabled()` 喂。
 - **`is_stale()` 管失效提示**：程序目录被移动后条目仍指向旧路径，开机自启会静默失败；设置页据此提示"关闭再开启"。
 - **失败必须回滚界面**：`enable()` / `disable()` 失败抛 `SelfStartupError`，入口弹窗说明后**无论成败都用系统真值重新初始化开关**（`apply_autostart`），绝不让开关停在没生效的位置。
-- 分层：设置页只发 `autostart_changed(bool)` 信号，写系统由入口做。页面里 `setValue()` 初始化期间由 `_loading` 挡住，否则"用系统真值初始化开关"本身会被当成用户操作再写一遍系统。
-- **`--autostart` 是静默启动的唯一判据**：入口判断 `self_startup.AUTOSTART_FLAG in sys.argv`，命中就不 `window.show()`。这个常量同时是写进注册表那条命令的一部分，别在两处各写一遍字符串。
-- **托盘是静默模式下的唯一操作面**：`NotificationService` 提供双击唤出窗口（`show_requested`）和托盘菜单「打开控制台 / 退出」（`quit_requested`）。少了它们，开机自启后用户只能去任务管理器结束进程。托盘菜单必须用属性存引用——`setContextMenu` 只挂指针，不做父子关系。
+- 分层：通用设置页只发 `autostart_changed(bool)` 信号，窗口把它原样转发成 `SettingsWindow.autostart_changed`，写系统由入口做。页面里 `setValue()` 初始化期间由 `_loading` 挡住，否则"用系统真值初始化开关"本身会被当成用户操作再写一遍系统。
+- **`--autostart` 是静默启动的唯一判据**：入口判断 `self_startup.AUTOSTART_FLAG in sys.argv`，命中就两个窗口都不 `show()`（只留托盘）。这个常量同时是写进注册表那条命令的一部分，别在两处各写一遍字符串。
+- **托盘是静默模式下的唯一操作面**：`NotificationService` 提供双击/菜单打开控制台（`dashboard_requested`）、菜单打开设置（`settings_requested`）和退出（`quit_requested`）。少了它们，开机自启后用户只能去任务管理器结束进程。托盘菜单必须用属性存引用——`setContextMenu` 只挂指针，不做父子关系。
 
 ## PyInstaller 打包注意点
 
@@ -135,6 +140,6 @@ uv run pyinstaller --noconfirm class-pet.spec  # 打包（先关掉正在运行�
    - **"只在打包态生效"的分支（如 `sys.frozen` 门禁）可以在探针里进程内伪造** `sys.frozen = True` 再 `runpy.run_path(入口)`，这样在开发机上就能验完整链路（例：「设置页开关 → 信号 → 入口 → 注册表」实测就是这么验的）。
    - **要真实点击 exe 界面时，先 `SetForegroundWindow` 并确认 `GetForegroundWindow()` 就是它，否则直接跳过点击**。窗口没置前就点屏幕，会点到用户自己的窗口上。
    - 会改动用户系统的验证（注册表、自启动条目）**必须自带备份与还原**，收尾要打印现场确认干净。
-4. **探针脚本写进系统临时目录，不要放仓库里。** 原因：`[tool.basedpyright] include = ["**/*.py"]` 会把仓库里的临时 .py 一并分析，而这类探针必然产生误报——`QApplication.exec = patched_exec` 会被判 `reportAttributeAccessIssue`（存根里 `exec` 是 `() -> int`，补丁函数多带一个 `self`），`win.settings_page` / `win.dashboard` 这类自定义属性同样被判 `reportAttributeAccessIssue`（`topLevelWidgets()` 的静态类型只是 `QWidget`），`job.next_run_time` 还会判 `reportOptionalMemberAccess`。放临时目录可同时绕开 basedpyright 的 include、ruff 与 `uv run basedpyright` 的门禁。
+4. **探针脚本写进系统临时目录，不要放仓库里。** 原因：`[tool.basedpyright] include = ["**/*.py"]` 会把仓库里的临时 .py 一并分析，而这类探针必然产生误报——`QApplication.exec = patched_exec` 会被判 `reportAttributeAccessIssue`（存根里 `exec` 是 `() -> int`，补丁函数多带一个 `self`），`win.status` / `win.general` 这类自定义属性同样被判 `reportAttributeAccessIssue`（`topLevelWidgets()` 的静态类型只是 `QWidget`），`job.next_run_time` 还会判 `reportOptionalMemberAccess`。放临时目录可同时绕开 basedpyright 的 include、ruff 与 `uv run basedpyright` 的门禁。
    - 用法：探针里先 `sys.path.insert(0, r"<项目绝对路径>")`，再 `runpy.run_path(r"<项目绝对路径>\run_classpet.py", run_name="__main__")`。两处都不能省——`runpy.run_path` **不会**把脚本目录加进 `sys.path`，而入口要 `import classpet`；`resource_path()` 按包自身位置解析 `res/`，与 cwd 无关。
 5. 验证脚本用完即删，不要留在仓库里。

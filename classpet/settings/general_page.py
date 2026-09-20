@@ -1,12 +1,12 @@
-"""设置页。"""
+"""通用设置页。"""
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 from qfluentwidgets import BodyLabel, FluentIcon, SubtitleLabel, SwitchSettingCard
 
 
-class SettingsPage(QWidget):
-    """设置页。
+class GeneralPage(QWidget):
+    """通用设置页。
 
     页面只表达"用户想改成什么"（`autostart_changed`），真实状态与写系统都由入口负责：
     开关初值用系统真值喂进来，写失败时入口再把它刷回去，避免界面与系统不一致。
@@ -17,7 +17,7 @@ class SettingsPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         # addSubInterface 要求 objectName 非空，否则抛 ValueError。
-        self.setObjectName("settingsPage")
+        self.setObjectName("generalPage")
 
         self._loading = False  # 初始化期间不把 setValue 当成用户操作
 
@@ -26,13 +26,13 @@ class SettingsPage(QWidget):
         layout.setSpacing(12)  # 相邻控件之间的间距
 
         title = SubtitleLabel(self)
-        title.setText("设置")
+        title.setText("通用")
         layout.addWidget(title)
 
         self.autostart_card = SwitchSettingCard(
             FluentIcon.POWER_BUTTON,
             "开机自启动",
-            "登录 Windows 后在托盘静默启动，不弹出主窗口",
+            "登录 Windows 后在托盘静默启动，不显示窗口",
             parent=self,
         )
         self.autostart_card.checkedChanged.connect(self._on_autostart_toggled)
@@ -59,6 +59,7 @@ class SettingsPage(QWidget):
         else:
             self.autostart_hint.setText("")
 
+    @Slot(bool)  # 接自己的开关卡片
     def _on_autostart_toggled(self, checked: bool) -> None:
         if not self._loading:  # 初始化时 setValue 也会触发，别误当成用户操作
             self.autostart_changed.emit(checked)

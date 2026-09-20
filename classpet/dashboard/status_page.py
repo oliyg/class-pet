@@ -1,16 +1,16 @@
-"""控制台：宠物状态与活动概览。"""
+"""状态页：宠物状态与活动概览。"""
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Slot
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 from qfluentwidgets import BodyLabel, SubtitleLabel
 
 from classpet import APP_NAME
 
 
-class DashboardPage(QWidget):
-    """控制台页。
+class StatusPage(QWidget):
+    """状态页。
 
     目前展示两类真实状态：全局输入活动（由 InputMonitor 的信号驱动）与空闲时长
     （由入口注入取数函数，本页不 import worker 模块）。宠物状态等内容待有数据源再加。
@@ -19,7 +19,7 @@ class DashboardPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         # addSubInterface 要求 objectName 非空，否则抛 ValueError。
-        self.setObjectName("dashboardPage")
+        self.setObjectName("statusPage")
 
         self._idle_source: Callable[[], float] | None = None
 
@@ -28,7 +28,7 @@ class DashboardPage(QWidget):
         layout.setSpacing(12)  # 相邻控件之间的间距
 
         title = SubtitleLabel(self)
-        title.setText("控制台")
+        title.setText("状态")
         layout.addWidget(title)
 
         subtitle = BodyLabel(self)
@@ -55,9 +55,11 @@ class DashboardPage(QWidget):
         """由入口注入"距上次输入活动多少秒"的取数函数。"""
         self._idle_source = provider
 
+    @Slot(str, int)  # 接 InputMonitor.activity（跨线程，靠这里的签名做排队转换）
     def show_activity(self, kind: str, count: int) -> None:
         self.activity_label.setText(f"最近事件：{kind} · 第 {count} 次")
 
+    @Slot()  # 接自己的 QTimer
     def _refresh_idle(self) -> None:
         if self._idle_source is None:
             return

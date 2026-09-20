@@ -1,17 +1,13 @@
-"""后台行为模块（worker）。
+"""全局输入监听（worker）。
 
-这里的东西都不直接操作控件：它们的回调或任务运行在非 GUI 线程上，
-一律通过 Qt Signal 交给界面侧处理。
+不直接操作控件：回调跑在 pynput 的钩子线程上，一律通过 Qt Signal 交给界面侧处理。
 """
 
 import itertools
 import time
 
-from apscheduler.schedulers.qt import QtScheduler
 from pynput import keyboard, mouse
-from PySide6.QtCore import QObject, Signal
-
-from classpet import APP_NAME
+from PySide6.QtCore import QObject, Signal, Slot
 
 
 class InputMonitor(QObject):
@@ -39,6 +35,7 @@ class InputMonitor(QObject):
         for listener in self._listeners:
             listener.start()  # 各自跑在独立的守护线程上
 
+    @Slot()  # 接到 app.aboutToQuit
     def stop(self) -> None:
         for listener in self._listeners:
             listener.stop()  # 摘下系统钩子，stop() 不可在钩子线程内调用
@@ -70,31 +67,3 @@ class InputMonitor(QObject):
     def _emit(self, kind: str, counter) -> None:
         self.last_activity = time.monotonic()
         self.activity.emit(kind, next(counter))
-
-
-class SchedulerWorker(QObject):
-    """定时任务。
-
-    唤醒走 Qt 事件循环（QtScheduler 内部用 QTimer），不额外起调度线程；
-    但任务体跑在默认的 ThreadPoolExecutor 线程池里，所以任务里不能碰控件。
-    """
-
-    reminder_due = Signal(str, str)  # (标题, 正文)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.scheduler = QtScheduler()
-
-    def start(self) -> None:
-        self.scheduler.start()
-        # 测试任务：每分钟弹一次系统提醒，用来验证「调度器 → 信号 → 系统通知」整条链路。
-        # 课表/提醒规则定下来后替换掉它。
-        self.scheduler.add_job(self._test_reminder, "interval", minutes=1, id="test-reminder")
-
-    def shutdown(self) -> None:
-        if self.scheduler.running:
-            self.scheduler.shutdown(wait=False)  # 不让卡住的任务拖住进程退出
-
-    def _test_reminder(self) -> None:
-        # 任务体在 ThreadPoolExecutor 线程上，这里只发信号。
-        self.reminder_due.emit(APP_NAME, "系统提醒测试：定时任务已触发")
