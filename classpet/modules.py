@@ -44,6 +44,13 @@ class InputMonitor(QObject):
             listener.stop()  # 摘下系统钩子，stop() 不可在钩子线程内调用
         self._listeners = []
 
+    def idle_seconds(self) -> float:
+        """距最后一次输入活动的秒数。
+
+        可以被别的线程读：这里只是读一个 float，最坏读到上一个 tick 的值，无副作用。
+        """
+        return time.monotonic() - self.last_activity
+
     def _on_key_press(self, key) -> None:
         # 故意不读 key.char：全局记录按键内容等同于键盘记录器。
         # 注意回调不能返回 False，pynput 会把它当停表信号抛 StopException。

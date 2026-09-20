@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from qfluentwidgets import Theme, setTheme
 from tendo import singleton
 
-from classpet import APP_NAME
+from classpet import APP_NAME, self_startup
 from classpet.dashboard.main_window import MainWindow
 from classpet.modules import InputMonitor, SchedulerWorker
 from classpet.notification import NotificationService
@@ -57,17 +57,47 @@ def main() -> int:
     scheduler = SchedulerWorker()
     notification = NotificationService()
 
-    # 跨模块连线集中在这里，模块之间不互相 import。
-    window.setup_activity(monitor)  # 输入活动 → 首页状态行
-    scheduler.reminder_due.connect(notification.show)  # 到点提醒 → 系统通知
+    def apply_autostart(enabled: bool) -> None:
+        """把设置页的意图写进系统。
 
-    window.show()  # 先显示窗口，再进入事件循环
-    monitor.start()  # 窗口就绪后再挂全局钩子
+        失败（例如被安全软件拦截）就弹窗说明，然后**无论成败都以系统真值刷新界面**——
+        绝不让开关停在一个没生效的位置上。
+        """
+        try:
+            if enabled:
+                self_startup.enable()
+            else:
+                self_startup.disable()
+        except self_startup.SelfStartupError as exc:
+            QMessageBox.warning(None, APP_NAME, str(exc))
+
+        window.setup_autostart(
+            enabled=self_startup.is_enabled(),
+            supported=self_startup.is_supported(),
+            stale=self_startup.is_stale(),
+        )
+
+    # 跨模块连线集中在这里，模块之间不互相 import。
+    window.setup_activity(monitor)  # 输入活动 → 控制台状态行
+    window.setup_autostart(  # 开关初值 = 系统里的真值
+        enabled=self_startup.is_enabled(),
+        supported=self_startup.is_supported(),
+        stale=self_startup.is_stale(),
+    )
+    window.settings_page.autostart_changed.connect(apply_autostart)  # 开关 → 写系统
+    scheduler.reminder_due.connect(notification.show)  # 到点提醒 → 系统通知
+    notification.show_requested.connect(window.show_and_raise)  # 托盘双击 → 唤出窗口
+    notification.quit_requested.connect(app.quit)  # 托盘菜单 → 退出
+
+    # 开机自启（--autostart）时不弹主窗口，只驻留托盘；用户双击托盘图标唤出。
+    if self_startup.AUTOSTART_FLAG not in sys.argv:
+        window.show()
+    monitor.start()  # 全局钩子
     scheduler.start()  # 依附 Qt 事件循环，必须在 app.exec() 之前启动
     app.aboutToQuit.connect(monitor.stop)  # 退出前务必摘下钩子
     app.aboutToQuit.connect(scheduler.shutdown)
 
-    return app.exec()  # 阻塞至窗口关闭，返回进程退出码
+    return app.exec()  # 阻塞至窗口关闭（或托盘菜单退出），返回进程退出码
 
 
 if __name__ == "__main__":

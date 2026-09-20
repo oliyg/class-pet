@@ -46,6 +46,22 @@ uv run pyinstaller --noconfirm class-pet.spec
 uv run python -c "from PIL import Image; Image.open('res/icons/class-pet.png').save('res/icons/class-pet.ico', format='ICO', sizes=[(s,s) for s in (16,24,32,48,64,128,256)])"
 ```
 
+## 开机自启动
+
+设置页里有「开机自启动」开关。它**只在打包后的程序里可用**——开发态开关会被置灰并说明原因（开发态跑的是 `python`，写进系统没有意义）。
+
+开启后会在 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` 写一条：
+
+```
+"C:\...\class-pet.exe" --autostart
+```
+
+- 登录 Windows 后在托盘**静默启动，不弹出主窗口**；双击托盘图标或点托盘菜单「打开控制台」唤出窗口。
+- 关闭开关即删除该条目；重复开启等于覆盖，不会产生多条。
+- 程序被移动后条目会指向旧路径，设置页会提示「登记的启动路径与当前程序不一致」，关闭再开启即可修正。
+- 只写 `HKCU`，不需要管理员权限，卸载时删掉这一个值即可。
+- macOS 尚未实现。
+
 ## 项目结构
 
 ```
@@ -54,15 +70,21 @@ class-pet/
 ├── classpet/           # 应用包
 │   ├── __init__.py     # APP_NAME 等包级常量
 │   ├── modules.py      # 后台 worker：InputMonitor、SchedulerWorker
-│   ├── notification.py # 通知系统：常驻托盘图标 + 系统通知
+│   ├── notification.py # 托盘图标、系统通知、托盘菜单
+│   ├── self_startup/   # 开机自启动（目前只有 Windows 实现）
+│   │   ├── __init__.py # 门面：is_supported / is_enabled / enable / disable
+│   │   └── win32.py    # HKCU Run 键实现
 │   ├── utils.py        # 通用工具（resource_path）
 │   └── dashboard/      # 界面集合
 │       ├── main_window.py # 主窗口：导航栏 + 页面装配
-│       └── home.py        # 首页
+│       ├── dashboard.py   # 控制台页（输入活动 + 空闲时长）
+│       └── settings.py    # 设置页（开机自启动开关）
 ├── res/
 │   └── icons/
 │       ├── class-pet.png # 图标源图
 │       └── class-pet.ico # 程序与窗口图标
+├── docs/
+│   └── hkcu.md         # HKCU（注册表）与开机自启的关系
 ├── class-pet.spec      # PyInstaller 打包配置
 ├── pyproject.toml      # 项目元数据与依赖
 ├── uv.lock
@@ -73,4 +95,4 @@ class-pet/
 
 ## 当前状态
 
-上方项目简介描述的是产品的目标形态。仓库目前的代码按职责分层放在 `classpet/` 包里（`modules.py` 后台 worker、`notification.py` 通知、`dashboard/` 界面、`utils.py` 工具），入口 `run_classpet.py` 只做编排：`FluentWindow` + 左侧导航 + 首页，`pynput` 全局输入监听（只统计事件次数与最后活动时间，不记录按键内容），`tendo` 保证同一份代码同时只跑一个实例，定时任务由 `apscheduler` 承担（现有一个每分钟弹一次系统提醒的测试任务），`class-pet.spec` 可打出带图标的 Windows 可执行程序；课表、调课、通知等业务功能均未实现。
+上方项目简介描述的是产品的目标形态。仓库目前的代码按职责分层放在 `classpet/` 包里（`modules.py` 后台 worker、`notification.py` 托盘与通知、`self_startup/` 开机自启动、`dashboard/` 界面、`utils.py` 工具），入口 `run_classpet.py` 只做编排：`FluentWindow` + 左侧导航（控制台 / 设置），`pynput` 全局输入监听（只统计事件次数与最后活动时间，不记录按键内容），`tendo` 保证同一份代码同时只跑一个实例，定时任务由 `apscheduler` 承担（现有一个每分钟弹一次系统提醒的测试任务），开机自启动写 `HKCU` 的 Run 键（仅打包态可用），`class-pet.spec` 可打出带图标的 Windows 可执行程序；课表、调课、通知等业务功能均未实现。
