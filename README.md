@@ -10,6 +10,7 @@
 
 - Python 3.12（由 uv 管理的 `.venv`）
 - PySide6 6.11.2
+- qfluentwidgets 1.11.3（UI 库，PyPI 包名 `pyside6-fluent-widgets`）
 - 依赖声明见 `pyproject.toml`，锁定见 `uv.lock`
 
 系统 PATH 上没有 `python`，请统一通过 `uv` 执行。
@@ -28,9 +29,11 @@ class-pet/
 ├── main.py         # 唯一源文件，应用入口
 ├── pyproject.toml  # 项目元数据与依赖
 ├── uv.lock
+├── AGENTS.md       # 面向编码 agent 的约定
+├── README.md
 └── .gitignore
 ```
 
 ## 当前状态
 
-上方项目简介描述的是产品的目标形态。仓库目前仍是最小可运行骨架：仅创建 `QApplication` 并显示一个 `QLabel` 窗口，课表、调课、通知等功能均未实现。
+上方项目简介描述的是产品的目标形态。仓库目前只有 UI 骨架：一个 `qfluentwidgets.FluentWindow`，含左侧导航栏与一个空白首页；课表、调课、通知等业务功能均未实现。
