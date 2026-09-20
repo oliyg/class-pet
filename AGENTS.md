@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-`class-pet`（课小宠 ClassPet）：面向教师的桌面助手，目标形态是课表 / 调课 / 上课通知。PySide6 桌面端应用，UI 层用 **qfluentwidgets**，**单体单文件**结构。入口为 `main.py`，当前只是一个 `FluentWindow` + 单个空白首页的骨架，业务功能尚未实现。
+`class-pet`（课小宠 ClassPet）：面向教师的桌面助手，目标形态是课表 / 调课 / 上课通知。PySide6 桌面端应用，UI 层用 **qfluentwidgets**，**单体单文件**结构。入口为 `main.py`，当前是 `FluentWindow` + 单个首页 + `pynput` 全局输入监听的骨架，业务功能尚未实现。
 
 ## 环境与命令
 
@@ -16,6 +16,7 @@ uv run python -c ... # 执行临时脚本
 
 - 已安装：PySide6 6.11.2（`pyside6` + `pyside6-essentials` + `pyside6-addons` + `shiboken6`）
 - 已安装 UI 库：qfluentwidgets 1.11.3（PyPI 包名 `pyside6-fluent-widgets`），随之带入 `pysidesix-frameless-window`、`darkdetect`、`pywin32`。
+- 已安装输入监听：pynput 1.8.2（随附 `six`）。
 - `pyproject.toml` 中 `package = false`：本项目是可执行的脚本目录，不是可安装包，新增模块时无需构建后端。
 
 ## 结构约束
@@ -37,6 +38,16 @@ uv run python -c ... # 执行临时脚本
 - `QApplication.setHighDpiScaleFactorRoundingPolicy(...)` 必须在构造 `QApplication` **之前**调用。
 - 1.11.3 的控件构造函数只接 `parent`，文本用 `setText()` 赋值（不要照抄旧版文档里 `PushButton("确定", self)` 的写法）。
 - `import qfluentwidgets` 会向 stdout 打印一行 Pro 版推广横幅，属上游行为，不要试图屏蔽。
+
+## pynput 注意点
+
+- **线程**：回调跑在 pynput 自己的钩子线程上，绝不能直接操作控件。必须经 `Signal` 发出，由 Qt 排队回 GUI 线程（`InputMonitor.activity` 就是这么做的）。
+- **回调返回 `False` 会终止监听**：pynput 把 `False` 当停表信号抛 `StopException`。回调一律返回 `None`。
+- **参数个数会被自动适配**：`keyboard.Listener` 用 `_wrap(on_press, 2)`、`mouse.Listener` 用 `_wrap(on_click, 5)`。回调少写参数会被截断（`on_move(x, y)` 收不到第三个 `injected`），多写则在构造时抛 `ValueError`。
+- **必须成对启停**：`start()` 后要在 `app.aboutToQuit` 里 `stop()` 摘钩子；`stop()` 不能在钩子线程内调用。钩子线程本身是守护线程。
+- **跨线程计数不能用 `+= 1`**：键盘与鼠标钩子在两个线程上，用 `itertools.count()` 的 `next()`（原子）代替。
+- **`time.monotonic()` 在 Windows 上是 `GetTickCount64`，粒度 15.625 ms**：同一 tick 内连续两次读取会相等，空闲判断不要假设更高精度。
+- **默认不读 `key.char`**：全局记录按键内容等同于键盘记录器。只在确实需要全局快捷键时读具体键。
 
 ## 验证 GUI 改动
 

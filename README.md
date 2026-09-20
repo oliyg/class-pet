@@ -11,6 +11,7 @@
 - Python 3.12（由 uv 管理的 `.venv`）
 - PySide6 6.11.2
 - qfluentwidgets 1.11.3（UI 库，PyPI 包名 `pyside6-fluent-widgets`）
+- pynput 1.8.2（全局输入监听）
 - 依赖声明见 `pyproject.toml`，锁定见 `uv.lock`
 
 系统 PATH 上没有 `python`，请统一通过 `uv` 执行。
@@ -36,4 +37,4 @@ class-pet/
 
 ## 当前状态
 
-上方项目简介描述的是产品的目标形态。仓库目前只有 UI 骨架：一个 `qfluentwidgets.FluentWindow`，含左侧导航栏与一个空白首页；课表、调课、通知等业务功能均未实现。
+上方项目简介描述的是产品的目标形态。仓库目前只有 UI 骨架与输入的「活动监听」：`FluentWindow` + 左侧导航 + 首页，另加 `pynput` 全局输入监听（只统计事件次数与最后活动时间，不记录按键内容）；课表、调课、通知等业务功能均未实现。
