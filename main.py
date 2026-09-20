@@ -17,6 +17,7 @@ from qfluentwidgets import (
     Theme,
     setTheme,
 )
+from tendo import singleton
 
 
 class InputMonitor(QObject):
@@ -122,6 +123,15 @@ class MainWindow(FluentWindow):
 
 
 def main() -> int:
+    # 单实例：锁文件放在系统临时目录，第二个实例会抛 SingleInstanceException。
+    # 必须留住 instance 这个引用——对象一旦被回收，__del__ 会立刻删掉锁文件，单实例随即失效。
+    try:
+        instance = singleton.SingleInstance("class-pet")  # noqa: F841 —— 见上：这个引用不能删
+    except singleton.SingleInstanceException:
+        # 已有实例在运行：不用再启动 Qt，直接退出。
+        print("课小宠 ClassPet 已在运行，本次启动退出。", file=sys.stderr)
+        return 1
+
     # 高 DPI 缩放策略必须在 QApplication 构造之前设置，否则不生效。
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough

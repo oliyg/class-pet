@@ -12,11 +12,13 @@
 uv sync              # 同步依赖
 uv run main.py       # 运行应用
 uv run python -c ... # 执行临时脚本
+uv run ruff check .  # 静态检查
 ```
 
 - 已安装：PySide6 6.11.2（`pyside6` + `pyside6-essentials` + `pyside6-addons` + `shiboken6`）
 - 已安装 UI 库：qfluentwidgets 1.11.3（PyPI 包名 `pyside6-fluent-widgets`），随之带入 `pysidesix-frameless-window`、`darkdetect`、`pywin32`。
 - 已安装输入监听：pynput 1.8.2（随附 `six`）。
+- 已安装单实例：tendo 0.3.0。
 - `pyproject.toml` 中 `package = false`：本项目是可执行的脚本目录，不是可安装包，新增模块时无需构建后端。
 
 ## 结构约束
@@ -30,7 +32,8 @@ uv run python -c ... # 执行临时脚本
 - 缩进 4 空格，双引号，`snake_case` 命名。
 - Qt 导入一律用 `PySide6.*`，不要用 `PyQt*` 或 `PySide2`。
 - UI 控件优先用 `qfluentwidgets`（`FluentWindow`、`PushButton`、`BodyLabel`、`SubtitleLabel` 等）；`PySide6.QtWidgets` 只用来搭布局与容器（`QWidget`、`QVBoxLayout`）。同一控件两套写法混用属于禁止项。
-- 未配置测试框架、linter、formatter（无 pytest / ruff / black 配置）。不要擅自引入，需要时先确认。
+- 未配置测试框架与 formatter（无 pytest / black）。已引入 ruff 做静态检查（`uv run ruff check .`），不要换别的 linter，也不要擅自加规则。
+- **禁止 `ruff check --fix --unsafe-fixes`**：其中「移除未使用的 `instance`」会静默破坏单实例（见下）。
 
 ## qfluentwidgets 注意点
 
@@ -48,6 +51,17 @@ uv run python -c ... # 执行临时脚本
 - **跨线程计数不能用 `+= 1`**：键盘与鼠标钩子在两个线程上，用 `itertools.count()` 的 `next()`（原子）代替。
 - **`time.monotonic()` 在 Windows 上是 `GetTickCount64`，粒度 15.625 ms**：同一 tick 内连续两次读取会相等，空闲判断不要假设更高精度。
 - **默认不读 `key.char`**：全局记录按键内容等同于键盘记录器。只在确实需要全局快捷键时读具体键。
+
+## tendo 单实例注意点
+
+- **必须持有 `SingleInstance` 实例的引用**（`main()` 里的 `instance` 是承重的，不是废变量）。对象一旦被回收，`__del__` 会立刻关掉句柄并删掉锁文件，单实例随即失效——实测不持引用时第二个实例照常启动。
+- 因此该行带 `# noqa: F841`：ruff 会报"赋值后未使用"，那是**故意抑制**，不要"清理"它，也别用 `--unsafe-fixes`。
+- **锁文件路径**：`%TEMP%\<sys.argv[0] 绝对路径转义>-main-<flavor_id>.lock`，本项目的例子是 `%TEMP%\C-Users-...-class-pet-main-class-pet.lock`。名字依赖脚本路径，所以换目录启动视为不同实例。
+- **Windows 上的判定机制**：`os.unlink` 现有锁文件 → 运行中的实例持有该文件，删除会失败并抛 `PermissionError`（`WinError 32`，errno 13）→ `tendo` 据此抛 `SingleInstanceException`。它不是端口/互斥体方案，全靠"文件被占用则删不掉"。
+- **`SingleInstanceException` 继承自 `BaseException`**，`except Exception` 抓不到，必须显式捕获。不捕获会打印一大段（含中文本地化 WinError 文案的）traceback 并返回 1。
+- **异常退出会遗留锁文件**（被强杀时 `__del__` 不执行，实测残留），但下次启动会先 `unlink` 陈旧锁再创建，能自愈。正常退出由 `__del__` 清理干净。
+- 单实例检查放在 `main()` 开头、`QApplication` 之前，但**模块级 import 已经发生**：第二个实例仍会执行全部 import 并打印 qfluentwidgets 横幅，然后才退出。
+- 第二个实例目前只往 stderr 写一行并返回 1，GUI 用户看不到提示。若要做"唤出已有窗口"，需要另加 IPC（`QLocalServer`/`QSharedMemory`），`tendo` 不提供。
 
 ## 验证 GUI 改动
 
