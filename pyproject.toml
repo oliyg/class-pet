@@ -24,10 +24,19 @@ include = ["**/*.py", "class-pet.spec"]
 # 因此这里把默认的三项连同构建产物一起列全。
 exclude = ["**/node_modules", "**/__pycache__", "**/.*", "build", "dist"]
 
+[tool.pytest.ini_options]
+# GUI 集成测试用 pytest-qt：qtbot 提供 waitSignal / waitUntil，不用打 QApplication.exec 的补丁、
+# 也不用 sleep 固定时长。进程级契约（关窗常驻托盘）在 tests/test_process_lifecycle.py 里起真实进程。
+testpaths = ["tests"]
+pythonpath = ["."]  # `uv run pytest` 走 console script，仓库根不会自动进 sys.path
+qt_api = "pyside6"
+
 [dependency-groups]
 dev = [
     "basedpyright>=1.40.1",
     "pillow>=12.3.0",
     "pyinstaller>=6.22.3",
+    "pytest>=9.1.1",
+    "pytest-qt>=4.5.0",
     "ruff>=0.16.8",
 ]

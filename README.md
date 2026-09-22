@@ -26,11 +26,14 @@
 ```bash
 uv sync                 # 创建 .venv 并安装依赖
 uv run run_classpet.py  # 启动应用
+uv run pytest           # 集成测试（含"关窗后进程仍常驻"的进程级断言）
 uv run ruff check .     # 静态检查
 uv run basedpyright     # 类型检查
 ```
 
 重复启动会被拒绝：第二个实例提示「课小宠已在运行」后以退出码 1 结束，不会开出第二个窗口。提示方式随环境而定——开发运行时写 stderr，打包后弹对话框。
+
+**关闭窗口不等于退出程序**：`X` 只是把窗口收起来，进程继续驻留托盘（托盘图标仍在）；想再打开就双击托盘图标，或用托盘菜单「打开控制台 / 设置」。真正结束进程只有托盘菜单的「退出」一条路——所以别指望关窗能关掉它。
 
 ## 打包
 
@@ -88,7 +91,14 @@ class-pet/
 │       ├── class-pet.png     # 图标源图
 │       └── class-pet.ico     # 程序与窗口图标
 ├── docs/
-│   └── hkcu.md         # HKCU（注册表）与开机自启的关系
+│   ├── hkcu.md         # HKCU（注册表）与开机自启的关系
+│   ├── qt.md           # Qt / qfluentwidgets / 窗口与托盘的机制与实测
+│   ├── workers.md      # pynput / apscheduler / tendo 的线程与单实例机制
+│   └── toolchain.md    # 打包、静态检查、测试与验证手法
+├── tests/              # pytest-qt 集成测试
+│   ├── conftest.py     # 夹具：按入口的方式搭对象，不跑 main()
+│   ├── win32util.py    # 进程级测试用的 Win32 窗口探针
+│   └── test_*.py       # 窗口行为、托盘信号、状态页、自启动门禁、进程级契约
 ├── class-pet.spec      # PyInstaller 打包配置
 ├── pyproject.toml      # 项目元数据与依赖
 ├── uv.lock
@@ -99,4 +109,4 @@ class-pet/
 
 ## 当前状态
 
-上方项目简介描述的是产品的目标形态。仓库目前的代码按职责分层放在 `classpet/` 包里（`input_monitor.py` 与 `scheduler_worker.py` 两个 worker、`notification.py` 托盘与通知、`self_startup/` 开机自启动、`dashboard/` 与 `settings/` 两个窗口、`utils.py` 工具），入口 `run_classpet.py` 只做编排：两个 `FluentWindow`（控制台 / 设置），`pynput` 全局输入监听（只统计事件次数与最后活动时间，不记录按键内容），`tendo` 保证同一份代码同时只跑一个实例，定时任务由 `apscheduler` 承担（现有一个每分钟弹一次系统提醒的测试任务），开机自启动写 `HKCU` 的 Run 键（仅打包态可用），`class-pet.spec` 可打出带图标的 Windows 可执行程序；课表、调课、通知等业务功能均未实现。
+上方项目简介描述的是产品的目标形态。仓库目前的代码按职责分层放在 `classpet/` 包里（`input_monitor.py` 与 `scheduler_worker.py` 两个 worker、`notification.py` 托盘与通知、`self_startup/` 开机自启动、`dashboard/` 与 `settings/` 两个窗口、`utils.py` 工具），入口 `run_classpet.py` 只做编排：两个 `FluentWindow`（控制台 / 设置），`pynput` 全局输入监听（只统计事件次数与最后活动时间，不记录按键内容），`tendo` 保证同一份代码同时只跑一个实例，**关窗只隐藏窗口、进程常驻托盘**（退出走托盘菜单），定时任务由 `apscheduler` 承担（现有一个每分钟弹一次系统提醒的测试任务），开机自启动写 `HKCU` 的 Run 键（仅打包态可用），`class-pet.spec` 可打出带图标的 Windows 可执行程序，`tests/` 里有 27 项 pytest-qt 集成测试（含"点 X 之后进程仍常驻托盘"的进程级断言）；课表、调课、通知等业务功能均未实现。

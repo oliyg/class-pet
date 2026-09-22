@@ -50,6 +50,9 @@ def main() -> int:
     )
     app = QApplication(sys.argv)
     app.setWindowIcon(QIcon(resource_path("icons", "class-pet.ico")))  # 任务栏 / Alt-Tab 图标
+    # 常驻托盘：关窗只隐藏窗口，不结束进程。退出只有托盘菜单「退出」一条路。
+    # 注意 QSystemTrayIcon 不算"窗口"——默认值 True 时关掉最后一个窗口会连托盘一起带走进程。
+    app.setQuitOnLastWindowClosed(False)
     setTheme(Theme.AUTO)  # 主题跟随系统明暗
 
     # 后台模块与界面在此创建，并在下面的连线区集中挂钩。它们必须一直被引用着，
@@ -101,7 +104,7 @@ def main() -> int:
     app.aboutToQuit.connect(monitor.stop)  # 退出前务必摘下钩子
     app.aboutToQuit.connect(scheduler.shutdown)
 
-    return app.exec()  # 阻塞至窗口关闭（或托盘菜单退出），返回进程退出码
+    return app.exec()  # 常驻托盘：阻塞至托盘菜单「退出」，返回进程退出码
 
 
 if __name__ == "__main__":
